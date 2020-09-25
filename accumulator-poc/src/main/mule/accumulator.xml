@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp" xmlns:kafka="http://www.mulesoft.org/schema/mule/kafka"
+	xmlns:os="http://www.mulesoft.org/schema/mule/os"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/kafka http://www.mulesoft.org/schema/mule/kafka/current/mule-kafka.xsd
+http://www.mulesoft.org/schema/mule/sftp http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="a4126f92-4bc0-4816-9c9a-7d7d3f7606e1" >
+		<http:listener-connection host="0.0.0.0" port="8085" />
+	</http:listener-config>
+	<ee:object-store-caching-strategy name="Caching_Strategy" doc:name="Caching Strategy" doc:id="97f06fcd-88b5-4b97-a75f-6cb138474481" keyGenerationExpression="#[now()]" persistent="true" objectStore="Object_store"/>
+	<os:object-store name="Object_store" doc:name="Object store" doc:id="1d14bf09-3469-4737-926d-3d3fb9ebb66f" config-ref="ObjectStore_Config"/>
+	<os:config name="ObjectStore_Config" doc:name="ObjectStore Config" doc:id="d08302b2-5866-4c53-88b2-e72a04605571" >
+		<os:connection >
+			<reconnection failsDeployment="true" >
+				<reconnect />
+			</reconnection>
+		</os:connection>
+	</os:config>
+	<flow name="object_store_caching-pocFlow" doc:id="d8ebd8bf-1ed5-48f8-a794-be45b73aad0f" >
+		<http:listener doc:name="Listener" doc:id="aba1e397-6b21-4ce8-b7b1-76d6324c7c09" config-ref="HTTP_Listener_config" path="/caching"/>
+		<logger level="INFO" doc:name="Logger" doc:id="ab7aebb7-ece8-4fb9-abd9-e9ee0ae44065" message="Input payload #[payload]"/>
+		<ee:transform doc:name="Transform Message" doc:id="bf1542f8-0b28-426d-b077-ec55c20d6cbb" >
+			<ee:message >
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+
+fun createArray (items) = do {
+	var tst = items map {
+		 (if($.code contains "-")using (temp = ($.code splitBy("-"))){"totalAMount" : temp[0] } else {"totalAMount" : $.code})
+	}
+	fun getSubtotal (items) = items reduce ((item, accumulator = 0) ->
+        accumulator + (item.totalAMount))
+	---
+	{
+	"test" :123,
+	"ttAmt" : getSubtotal(tst)
+	}
+}
+---
+payload + createArray(payload)]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="875868f7-ead5-43d3-9b99-125db51604ce" message="Total amount : #[payload]"/>
+		<os:store doc:name="Store" doc:id="ea969ebd-1326-4119-84ad-9af036210dae" key="#[now()]" objectStore="Object_store"/>
+		<ee:cache doc:name="Cache" doc:id="a1d22048-ce79-45c3-97f5-ab4370ac42f3" cachingStrategy-ref="Caching_Strategy">
+			<set-payload value="#['Hello World!' ++ ' Today is ' ++ now()]" doc:id="cache is always good"/>
+		</ee:cache>
+		<os:retrieve-all-keys objectStore="Object_store"/>
+		<logger level="INFO" message="Keys : #[payload]"/>
+	</flow>
+</mule>
